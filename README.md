@@ -1,4 +1,4 @@
-# Member 4 — Blockchain & Security Module
+# Blockchain & Security Module
 ## Loan Management System | College Project
 
 ---
