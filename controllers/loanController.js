@@ -1,5 +1,5 @@
 const Loan = require("../models/Loan");
-
+const axios = require("axios");
 
 // Apply Loan
 exports.applyLoan = async (req, res) => {
@@ -8,18 +8,46 @@ exports.applyLoan = async (req, res) => {
 
         const { amount, purpose, duration } = req.body;
 
+        let riskData = null;
+
+        try {
+
+            const mlResponse = await axios.post(
+                "http://localhost:8000/predict",
+                {
+                    features: [amount, duration, 1, 0, 1]
+                }
+            );
+
+            riskData = mlResponse.data;
+
+        } catch (err) {
+
+            console.log("ML API Error:", err.message);
+
+            riskData = {
+                risk_score: 0,
+                risk_level: "Unknown",
+                default_probability: 0,
+                anomaly_detected: false
+            };
+        }
+
         const loan = new Loan({
             userId: req.user.id,
             amount,
             purpose,
-            duration
+            duration,
+            riskScore: riskData.risk_score,
+            riskLevel: riskData.risk_level
         });
 
         await loan.save();
 
         res.status(201).json({
             message: "Loan application submitted successfully",
-            loan
+            loan,
+            risk_assessment: riskData
         });
 
     } catch (error) {
@@ -45,8 +73,6 @@ exports.approveLoan = async (req, res) => {
                 message: "Loan not found"
             });
         }
-
-        // EMI Calculation
 
         const P = loan.amount;
 

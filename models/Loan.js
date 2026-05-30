@@ -52,6 +52,11 @@ const loanSchema = new mongoose.Schema({
         default: 0
     },
 
+    riskLevel: {
+        type: String,
+        default: "Unknown"
+    },
+
     blockchainHash: {
         type: String,
         default: ""
