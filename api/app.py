@@ -95,6 +95,6 @@ def predict(data: PredictionRequest):
             float(fraud_probability),
             4
         ),
-        "anomaly_detected": anomaly_detected,
+        "anomaly_detected": bool(anomaly_detected),
         "reason": reason
     }
