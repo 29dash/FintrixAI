@@ -62,7 +62,7 @@ async function logLoanRecord(loanData) {
       tenureMonths,
       status
     )
-    .send({ from: owner, gas: 300000 });
+    .send({ from: owner, gas: 1000000 });
 
   // Compute payload hash for audit entry
   const payloadHash = hashPayload(loanData);
@@ -78,7 +78,7 @@ async function logLoanRecord(loanData) {
       toBytes32(payloadHash),
       `Loan ${loanId} recorded with status ${status}`
     )
-    .send({ from: owner, gas: 200000 });
+    .send({ from: owner, gas: 1000000 });
 
   return buildResponse(receipt, `Loan record for ID ${loanId} stored on-chain`);
 }
@@ -108,7 +108,7 @@ async function logTransaction(txData) {
       description,
       toBytes32(payloadHash)
     )
-    .send({ from: owner, gas: 300000 });
+    .send({ from: owner, gas: 1000000 });
 
   // Determine txIndex from return value via event logs
   const txIndex = Number(
@@ -124,7 +124,7 @@ async function logTransaction(txData) {
       toBytes32(payloadHash),
       `Transaction ${txIndex} logged for loan ${loanId}`
     )
-    .send({ from: owner, gas: 200000 });
+    .send({ from: owner, gas: 1000000 });
 
   return {
     ...buildResponse(receipt, `Transaction ${txIndex} logged immutably`),
@@ -160,7 +160,7 @@ async function logUserRecord(userData) {
       creditScore,
       kycVerified
     )
-    .send({ from: owner, gas: 300000 });
+    .send({ from: owner, gas: 1000000 });
 
   // Audit entry for user registration
   await AuditTrail.methods
@@ -171,7 +171,7 @@ async function logUserRecord(userData) {
       kycHash,
       `User ${userId} registered, KYC verified: ${kycVerified}`
     )
-    .send({ from: owner, gas: 200000 });
+    .send({ from: owner, gas: 1000000 });
 
   return buildResponse(receipt, `User ${userId} registered on-chain`);
 }
