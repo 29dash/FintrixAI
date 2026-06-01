@@ -6,16 +6,69 @@ exports.applyLoan = async (req, res) => {
 
     try {
 
-        const { amount, purpose, duration } = req.body;
+        const {
+            amount,
+            purpose,
+            duration,
+
+            interestRate,
+            grade,
+
+            annualIncome,
+            employmentLength,
+            homeOwnership,
+            verificationStatus,
+
+            dti,
+            ficoScore,
+
+            openAccounts,
+            revolvingBalance,
+            revolvingUtilization,
+            totalAccounts
+
+        } = req.body;
 
         let riskData = null;
 
         try {
-
+        
+            /*console.log("ML PAYLOAD:", {
+                loan_amnt: amount,
+                term: duration,
+                int_rate: interestRate,
+                grade: grade,
+                emp_length: employmentLength,
+                home_ownership: homeOwnership,
+                annual_inc: annualIncome,
+                verification_status: verificationStatus,
+                purpose: purpose,
+                dti: dti,
+                fico_score: ficoScore,
+                open_acc: openAccounts,
+                revol_bal: revolvingBalance,
+                revol_util: revolvingUtilization,
+                total_acc: totalAccounts
+            });*/
+        
             const mlResponse = await axios.post(
                 "http://localhost:8000/predict",
                 {
-                    features: [ amount,duration,1,0,1,1000,500,2,1,0,10,5,1,0,3,2,1,1,0,0,1,2,3,4,5,1,0,1,2,3 ]
+                    loan_amnt: amount,
+                    term: duration,
+                    int_rate: interestRate,
+                    grade: grade,
+                    emp_length: employmentLength,
+                    home_ownership: homeOwnership,
+                    annual_inc: annualIncome,
+                    verification_status: verificationStatus,
+                    purpose: purpose,
+                    dti: dti,
+                    fico_score: ficoScore,
+                    open_acc: openAccounts,
+                    revol_bal: revolvingBalance,
+                    revol_util: revolvingUtilization,
+                    total_acc: totalAccounts
                 }
             );
 
@@ -23,31 +76,58 @@ exports.applyLoan = async (req, res) => {
 
         } catch (err) {
 
-            console.log("ML API Error:", err.message);
+            console.log(
+                "ML API Error:",
+                err.response?.data || err.message
+            );
 
             riskData = {
                 risk_score: 0,
                 risk_level: "Unknown",
-                default_probability: 0,
-                anomaly_detected: false
+                default_probability: 0
             };
         }
 
         const loan = new Loan({
+
             userId: req.user.id,
+
             amount,
             purpose,
             duration,
+
+            interestRate,
+            grade,
+
+            annualIncome,
+            employmentLength,
+            homeOwnership,
+            verificationStatus,
+
+            dti,
+            ficoScore,
+
+            openAccounts,
+            revolvingBalance,
+            revolvingUtilization,
+            totalAccounts,
+
             riskScore: riskData.risk_score,
             riskLevel: riskData.risk_level
+
         });
 
         await loan.save();
 
         res.status(201).json({
-            message: "Loan application submitted successfully",
+
+            message:
+                "Loan application submitted successfully",
+
             loan,
+
             risk_assessment: riskData
+
         });
 
     } catch (error) {

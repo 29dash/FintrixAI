@@ -22,6 +22,56 @@ const loanSchema = new mongoose.Schema({
         required: true
     },
 
+    annualIncome: {
+        type: Number,
+        required: true
+    },
+
+    employmentLength: {
+        type: String,
+        required: true
+    },
+
+    homeOwnership: {
+        type: String,
+        required: true
+    },
+
+    verificationStatus: {
+        type: String,
+        required: true
+    },
+
+    dti: {
+        type: Number,
+        required: true
+    },
+
+    ficoScore: {
+        type: Number,
+        required: true
+    },
+
+    openAccounts: {
+        type: Number,
+        required: true
+    },
+
+    revolvingBalance: {
+        type: Number,
+        required: true
+    },
+
+    revolvingUtilization: {
+        type: Number,
+        required: true
+    },
+
+    totalAccounts: {
+        type: Number,
+        required: true
+    },
+
     interestRate: {
         type: Number,
         default: 12
@@ -68,7 +118,13 @@ const loanSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ["pending", "approved", "rejected", "paid", "overdue"],
+        enum: [
+            "pending",
+            "approved",
+            "rejected",
+            "paid",
+            "overdue"
+        ],
         default: "pending"
     },
 
@@ -78,4 +134,7 @@ const loanSchema = new mongoose.Schema({
     }
 });
 
-module.exports = mongoose.model("Loan", loanSchema);
+module.exports = mongoose.model(
+    "Loan",
+    loanSchema
+);
