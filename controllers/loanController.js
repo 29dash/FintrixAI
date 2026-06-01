@@ -15,7 +15,7 @@ exports.applyLoan = async (req, res) => {
             const mlResponse = await axios.post(
                 "http://localhost:8000/predict",
                 {
-                    features: [amount, duration, 1, 0, 1]
+                    features: [ amount,duration,1,0,1,1000,500,2,1,0,10,5,1,0,3,2,1,1,0,0,1,2,3,4,5,1,0,1,2,3 ]
                 }
             );
 
@@ -103,6 +103,42 @@ exports.approveLoan = async (req, res) => {
         loan.nextDueDate = nextMonth;
 
         await loan.save();
+
+        // Blockchain Integration
+        try {
+
+            const blockchainResponse = await axios.post(
+                "http://localhost:3001/api/blockchain/loans/record",
+                {
+                    loanId: Date.now(),
+                    applicantAddress: "0xD65f293334F5B6f11fB52547200f1c5d49a958d8",
+                    applicantName: "FintrixAI User",
+                    loanAmount: loan.amount,
+                    interestRate: loan.interestRate,
+                    tenureMonths: loan.duration,
+                    status: "APPROVED"
+                }
+            );
+
+            loan.blockchainHash =
+                blockchainResponse.data.transaction_hash || "";
+
+            await loan.save();
+
+            console.log(
+                "Blockchain Record Created:",
+                blockchainResponse.data.transaction_hash
+            );
+
+        } catch (blockchainError) {
+
+            console.log(
+                "Blockchain Logging Error:",
+                blockchainError.response?.data ||
+                blockchainError.message
+            );
+
+        }
 
         res.status(200).json({
             message: "Loan approved successfully",
