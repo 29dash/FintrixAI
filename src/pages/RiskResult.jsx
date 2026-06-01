@@ -1,4 +1,8 @@
+import { useNavigate } from "react-router-dom";
+
+
 function RiskResult() {
+  const navigate = useNavigate();
   const result = JSON.parse(localStorage.getItem("loanResult"));
 
   const riskScore =
@@ -11,10 +15,10 @@ function RiskResult() {
     result?.risk_level ||
     "Unknown";
 
-  const reason =
-    result?.risk_assessment?.reason ||
-    result?.reason ||
-    "No explanation available";
+  const explanations =
+    result?.risk_assessment?.explanation ||
+    result?.explanation ||
+    [];
 
   return (
     <div className="fintrix-bg min-vh-100 d-flex align-items-center justify-content-center">
@@ -30,11 +34,19 @@ function RiskResult() {
         </h4>
 
         <div className="alert-risk mb-4">
-          {reason}
+          {explanations.length > 0 ? (
+            <ul className="text-start mb-0">
+              {explanations.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            "No explanation available"
+          )}
         </div>
 
-        <button className="btn btn-primary w-100">
-          Proceed with Application
+        <button className="btn btn-primary w-100" onClick={() => navigate("/dashboard")}
+>         Proceed to Dashboard
         </button>
       </div>
     </div>
