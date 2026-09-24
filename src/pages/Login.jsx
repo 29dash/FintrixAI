@@ -1,84 +1,82 @@
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "../state/useToast";
 
 function Login() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { showToast } = useToast();
 
   const handleLogin = async () => {
+    if (!email || !password) {
+      showToast("Enter your email and password to continue.", "error");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const res = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        {
-          email,
-          password,
-        }
-      );
+      const res = await axios.post("http://localhost:5001/api/auth/login", {
+        email,
+        password,
+      });
 
+      const user = res.data.user || { isAdmin: false };
       localStorage.setItem("token", res.data.token);
-
-      alert("Login successful!");
-
-      navigate("/dashboard");
+      localStorage.setItem("user", JSON.stringify(user));
+      window.dispatchEvent(new Event("fintrix-auth-changed"));
+      showToast("Login successful.", "success");
+      navigate(user.isAdmin ? "/admin" : "/dashboard");
     } catch (err) {
-      alert(
-        err.response?.data?.message ||
-        "Login failed"
-      );
+      showToast(err.response?.data?.message || "Login failed.", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="fintrix-bg min-vh-100 d-flex align-items-center justify-content-center">
-      <div className="form-card">
-        <div className="text-center mb-5">
-          <h1 className="fw-bold text-dark">
-            FintrixAI
-          </h1>
-
-          <p className="text-muted mt-3">
-            AI-Blockchain Financial Risk & Loan Management System
-          </p>
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-card__brand">
+          <div className="auth-card__mark">F</div>
+          <h1 className="auth-card__title">FintrixAI</h1>
         </div>
 
-        <input
-          type="email"
-          className="form-control form-control-lg mb-4"
-          placeholder="Email Address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <p className="auth-card__subtitle">
+          AI-powered financial risk and blockchain loan management platform.
+        </p>
 
-        <input
-          type="password"
-          className="form-control form-control-lg mb-4"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="auth-form">
+          <label className="field">
+            <span className="field__label">Email</span>
+            <input
+              type="email"
+              placeholder="name@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
 
-        <button
-          className="btn btn-primary btn-lg w-100"
-          onClick={handleLogin}
-        >
-          Login
-        </button>
+          <label className="field">
+            <span className="field__label">Password</span>
+            <input
+              type="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
 
-        <p className="text-center mt-4 text-muted">
-          Don’t have an account?{" "}
-          <span
-            style={{
-              color: "#4f46e5",
-              cursor: "pointer",
-              fontWeight: "600",
-            }}
-            onClick={() => navigate("/register")}
-          >
-            Sign Up
-          </span>
+          <button type="button" className="button button--primary button--wide" onClick={handleLogin} disabled={submitting}>
+            {submitting ? "Signing in..." : "Login"}
+          </button>
+        </div>
+
+        <p className="auth-card__footer">
+          Don’t have an account? <span className="auth-card__link" onClick={() => navigate("/register")}>Sign up</span>
         </p>
       </div>
     </div>

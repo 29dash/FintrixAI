@@ -1,354 +1,230 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { CircularProgressbar } from "react-circular-progressbar";
-import "react-circular-progressbar/dist/styles.css";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  FiActivity,
+  FiCheckCircle,
+  FiCreditCard,
+  FiDollarSign,
+  FiLoader,
+  FiShield,
+} from "react-icons/fi";
+
+import AppLayout from "../components/AppLayout";
+import EmptyState from "../components/EmptyState";
+import LoadingState from "../components/LoadingState";
+import RiskScoreCard from "../components/RiskScoreCard";
+import RetryAssessmentButton from "../components/RetryAssessmentButton";
+import SectionCard from "../components/SectionCard";
+import StatCard from "../components/StatCard";
+import { payLoan } from "../api";
+import { useLoans } from "../state/useLoans";
+import { useToast } from "../state/useToast";
+import { calculateEmi, formatCurrency, hasRiskScore, riskLabel } from "../utils/loan";
 
 function Dashboard() {
-  const [loan, setLoan] = useState(null);
+  const { selectedLoan: loan, user, loading, error, refreshLoans } = useLoans();
+  const { showToast } = useToast();
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [submittingPayment, setSubmittingPayment] = useState(false);
+  const isAdmin = Boolean(user?.isAdmin);
+  const riskValue = hasRiskScore(loan) ? Number(loan.riskScore) : null;
+  const riskLevelText = riskValue === null ? "Not yet calculated" : riskLabel(riskValue);
+  const calculatedEmi = calculateEmi(loan?.amount, loan?.interestRate, loan?.duration);
+  const monthlyEmi = Number.isFinite(Number(loan?.emi)) && Number(loan.emi) > 0 ? loan.emi : calculatedEmi;
+  const estimatedInterest = monthlyEmi && loan?.duration ? (Number(monthlyEmi) * Number(loan.duration)) - Number(loan.amount) : null;
+  const hasAssessmentFailure = loan?.riskAssessmentStatus === "failed";
+  const needsAssessment = ["failed", "pending"].includes(loan?.riskAssessmentStatus);
+  const isActiveLoan = ["approved", "overdue"].includes(loan?.status);
+  const defaultPaymentAmount = !isAdmin && isActiveLoan && loan ? String(Number(monthlyEmi || 0)) : "";
+  const riskDescription =
+    hasAssessmentFailure
+      ? "Risk assessment could not be completed. Please try again when the model service is available."
+      : riskValue === null
+        ? "Your risk assessment is pending. We’ll update this once the model analysis completes."
+        : `Your application is currently classified as ${riskLabel(riskValue).toLowerCase()}.`;
 
-  const navigate = useNavigate();
+  const handlePayEMI = async () => {
+    if (!loan?._id) return;
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/");
+    const parsedAmount = Number(paymentAmount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      showToast("Enter a valid EMI amount to pay.", "error");
+      return;
+    }
+
+    setSubmittingPayment(true);
+
+    try {
+      const response = await payLoan(loan._id, parsedAmount);
+      setPaymentAmount("");
+      showToast(response?.message || "Payment successful.", "success");
+      window.dispatchEvent(new CustomEvent("fintrix-transactions-refresh", { detail: { loanId: loan._id } }));
+      await refreshLoans();
+    } catch (requestError) {
+      showToast(requestError.message || "Payment failed.", "error");
+    } finally {
+      setSubmittingPayment(false);
+    }
   };
-  useEffect(() => {
-    const fetchLoans = async () => {
-      try {
-        const token = localStorage.getItem("token");
 
-        const res = await fetch(
-          "http://localhost:5000/api/loan/my-loans",
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        const data = await res.json();
-
-        if (data.length > 0) {
-          setLoan(data[0]);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    fetchLoans();
-  }, []);
-
-  if (!loan) {
+  if (loading) {
     return (
-      <div className="container mt-5">
-        <h3>Loading Dashboard...</h3>
-      </div>
+      <AppLayout sidebarVariant="user">
+        <LoadingState label="Loading your dashboard..." />
+      </AppLayout>
     );
   }
 
+  if (!loan) {
+    return (
+      <AppLayout sidebarVariant="user" title="Dashboard" subtitle="Welcome back. Here’s an overview of your loan activity.">
+        <div className="empty-state-panel">
+          <EmptyState
+            title="No loans found"
+            description="Apply for a loan to unlock your dashboard insights, risk analysis, and payment history."
+            icon={<FiCreditCard />}
+            action={
+              <Link to="/loan" className="button button--primary">
+                Apply Loan
+              </Link>
+            }
+          />
+        </div>
+      </AppLayout>
+    );
+  }
+
+  const greeting =
+    new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
+  const displayName = user?.name ? `, ${user.name}` : "";
+
   return (
-    <div className="container-fluid">
-      <div className="row">
-
-        <div className="col-md-2 sidebar">
-
-          <h3 className="mb-4">
-            FintrixAI
-          </h3>
-
-          <Link to="/dashboard">
-            Dashboard
-          </Link>
-
-          <Link to="/loan">
-            Apply Loan
-          </Link>
-
-          <Link to="/transactions">
-            Transactions
-          </Link>
-
-          <Link to="/blockchain">
-            Blockchain
-          </Link>
-
-          <Link to="/profile">
-            Profile
-          </Link>
-
-          <button
-            className="btn btn-danger w-100 mt-4"
-            onClick={logout}
-          >
-            Logout
-          </button>
-          
-        </div>
-
-        <div className="col-md-10 page-container">
-
-          <div className="dashboard-header">
-            <h2>Welcome Back 👋</h2>
-            <p>
-              AI-Powered Financial Risk &
-              Blockchain Loan Management Platform
-            </p>
-          </div>
-
-          <div className="row g-4 mb-4">
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Loan Amount</h6>
-                <h3>
-                  ₹{Number(loan.amount).toLocaleString()}
-                </h3>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>EMI</h6>
-                <h3>
-                  ₹{Number(loan.emi).toLocaleString()}
-                </h3>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Risk Score</h6>
-                <h3>{loan.riskScore}%</h3>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Status</h6>
-
-                <h3>
-                  <span
-                    className={
-                      loan.status === "approved"
-                        ? "success-badge"
-                        : "warning-badge"
-                    }
-                  >
-                    {loan.status.toUpperCase()}
-                  </span>
-                </h3>
-
-              </div>
-            </div>
-
-          </div>
-
-          <div className="row">
-
-            <div className="col-md-4">
-
-              <div className="card-soft p-4">
-
-                <h5 className="mb-4">
-                  AI Risk Meter
-                </h5>
-
-                <CircularProgressbar
-                  value={loan.riskScore}
-                  text={`${loan.riskScore}%`}
-                  styles={{
-                    path: {
-                      stroke:
-                        loan.riskLevel === "High"
-                          ? "#dc3545"
-                          : loan.riskLevel === "Medium"
-                          ? "#ffc107"
-                          : "#198754",
-                    },
-                  }}
-                />
-
-                <div className="text-center mt-4">
-
-                  <h5
-                    className={
-                      loan.riskLevel === "High"
-                        ? "high-risk"
-                        : loan.riskLevel === "Medium"
-                        ? "medium-risk"
-                        : "low-risk"
-                    }
-                  >
-                    {loan.riskLevel} Risk
-                  </h5>
-
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="col-md-8">
-
-              <div className="card-soft p-4">
-
-                <h4 className="mb-4">
-                  Loan Analytics
-                </h4>
-
-                <div className="row">
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Purpose</strong>
-                    <br />
-                    {loan.purpose}
-                  </div>
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Duration</strong>
-                    <br />
-                    {loan.duration} Months
-                  </div>
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Interest Rate</strong>
-                    <br />
-                    {loan.interestRate}%
-                  </div>
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Total Amount</strong>
-                    <br />
-                    ₹{Number(loan.totalAmount).toLocaleString()}
-                  </div>
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Remaining Balance</strong>
-                    <br />
-                    ₹{Number(loan.remainingBalance).toLocaleString()}
-                  </div>
-
-                  <div className="col-md-6 mb-4">
-                    <strong>Created On</strong>
-                    <br />
-                    {new Date(
-                      loan.createdAt
-                    ).toLocaleDateString()}
-                  </div>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div className="row mt-4">
-
-            <div className="col-md-6">
-
-              <div className="blockchain-card">
-
-                <h4>
-                  Blockchain Verification
-                </h4>
-
-                <p className="mt-3">
-                  Transaction Hash
-                </p>
-
-                <div className="hash-box">
-
-                  {loan.blockchainHash
-                    ? `${loan.blockchainHash.slice(
-                        0,
-                        15
-                      )}...${loan.blockchainHash.slice(
-                        -10
-                      )}`
-                    : "Pending"}
-
-                </div>
-
-                <div className="mt-3">
-
-                  {loan.blockchainHash ? (
-                    <span className="success-badge">
-                      ✓ Verified On-Chain
-                    </span>
-                  ) : (
-                    <span className="warning-badge">
-                      ⏳ Blockchain Record Pending
-                    </span>
-                  )}
-
-                </div>  
-
-              </div>
-
-            </div>
-
-            <div className="col-md-6">
-
-              <div className="card-soft p-4">
-
-                <h4 className="mb-4">
-                  Loan Timeline
-                </h4>
-
-                <div className="timeline-item">
-                  Loan Submitted
-                </div>
-
-                <div className="timeline-item">
-                  AI Risk Analysis Completed
-                </div>
-
-                <div className="timeline-item">
-                  Loan Approved
-                </div>
-
-                <div className="timeline-item">
-                  Blockchain Record Created
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div className="card-soft p-4 mt-4">
-
-            <h4 className="mb-3">
-              AI Recommendation
-            </h4>
-
-            <div className="alert-risk">
-
-              <strong>
-                Risk Level:
-              </strong>{" "}
-              {loan.riskLevel}
-
-              <br />
-
-              {loan.riskLevel === "High"
-                ? "Manual review recommended before loan disbursement."
-                : loan.riskLevel === "Medium"
-                ? "Additional verification suggested."
-                : "Safe for automated approval."}
-
-            </div>
-
-          </div>
-
-        </div>
-
+    <AppLayout
+      sidebarVariant="user"
+      title="Dashboard"
+      subtitle={`${greeting}${displayName}. Here’s an overview of your loan activity.`}
+    >
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <div className="stats-grid stats-grid--four">
+        <StatCard label="Loan Amount" value={formatCurrency(loan.amount)} hint="Current facility" icon={FiDollarSign} />
+        <StatCard label="Monthly EMI" value={monthlyEmi === null ? "—" : formatCurrency(monthlyEmi)} hint={loan.emi ? "Approved repayment" : "Calculated preview"} icon={FiCreditCard} />
+        <StatCard label="Risk Score" value={riskValue === null ? "Not yet calculated" : `${Math.round(riskValue)}%`} hint={riskLevelText} icon={FiActivity} />
+        <StatCard
+          label="Loan Status"
+          value={String(loan.status || "Pending").replace(/\b\w/g, (c) => c.toUpperCase())}
+          tone={loan.status === "approved" ? "success" : loan.status === "rejected" ? "danger" : "warning"}
+          hint={loan.status === "approved" ? "Approved" : "Under review"}
+          icon={FiCheckCircle}
+        />
       </div>
-    </div>
+
+      <div className="content-grid content-grid--two">
+        <SectionCard title="Risk Overview" subtitle="AI-powered assessment summary">
+          <RiskScoreCard
+            value={riskValue}
+            label={riskLevelText}
+            description={riskDescription}
+          />
+          {needsAssessment && <div className="assessment-retry"><p className="assessment-error">{loan.riskAssessmentError || (hasAssessmentFailure ? "The ML service did not return a usable response." : "This loan is waiting for risk analysis.")}</p><RetryAssessmentButton loan={loan} /></div>}
+        </SectionCard>
+
+        <SectionCard title="Loan Overview" subtitle="Application details and balance summary">
+          <div className="info-grid">
+            <div className="detail-item">
+              <span className="kv-label">Purpose</span>
+              <span className="kv-value">{loan.purpose || "Not provided"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Duration</span>
+              <span className="kv-value">{loan.duration ? `${loan.duration} months` : "Not provided"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Interest Rate</span>
+              <span className="kv-value">{loan.interestRate ? `${loan.interestRate}%` : "Not provided"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Loan Amount</span>
+              <span className="kv-value">{formatCurrency(loan.amount)}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">EMI</span>
+              <span className="kv-value">{monthlyEmi !== null && Number.isFinite(Number(monthlyEmi)) ? formatCurrency(monthlyEmi) : "Not yet calculated"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Remaining Balance</span>
+              <span className="kv-value">{["approved", "paid", "overdue"].includes(loan.status) && loan.remainingBalance !== null && loan.remainingBalance !== undefined ? formatCurrency(loan.remainingBalance) : "Not yet calculated"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Principal</span>
+              <span className="kv-value">{formatCurrency(loan.amount)}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Total Interest</span>
+              <span className="kv-value">{loan.totalInterest > 0 ? formatCurrency(loan.totalInterest) : estimatedInterest !== null ? formatCurrency(estimatedInterest) : "Not yet calculated"}</span>
+            </div>
+
+            <div className="detail-item">
+              <span className="kv-label">Created On</span>
+              <span className="kv-value">
+                {loan.createdAt ? new Date(loan.createdAt).toLocaleDateString() : "Not available"}
+              </span>
+            </div>
+          </div>
+
+          {!isAdmin && isActiveLoan && (
+            <div className="payment-form" style={{ marginTop: "1.25rem" }}>
+              <div className="detail-item" style={{ width: "100%" }}>
+                <span className="kv-label">Pay EMI</span>
+                <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                  <input
+                    key={`${loan?._id || "loan"}-${loan?.status || "status"}`}
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={paymentAmount || defaultPaymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    placeholder="EMI amount"
+                    style={{ flex: 1, minWidth: 160, padding: "0.7rem 0.9rem", borderRadius: 8, border: "1px solid #d1d5db" }}
+                  />
+                  <button
+                    type="button"
+                    className="button button--primary"
+                    disabled={submittingPayment}
+                    onClick={handlePayEMI}
+                  >
+                    {submittingPayment ? <><FiLoader style={{ marginRight: 6, animation: "spin 1s linear infinite" }} /> Processing...</> : "Pay EMI"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="summary-callout">
+        <div>
+          <div className="kv-label">Security status</div>
+          <div className="summary-callout__value">{loan.blockchainHash ? "Verified on blockchain" : "Awaiting blockchain verification"}</div>
+        </div>
+        <div className="summary-callout__meta">
+          <FiShield />
+        </div>
+      </div>
+      <SectionCard title="Why this score" subtitle="Top factors from the risk model">
+        {loan.riskExplanations?.length > 0 ? (
+          <ul className="explanation-list">
+            {loan.riskExplanations.slice(0, 3).map((factor) => <li key={factor}>{factor}</li>)}
+          </ul>
+        ) : <p className="muted-copy">{hasAssessmentFailure ? "No factors are available because the assessment failed." : "Factors will appear after risk analysis completes."}</p>}
+      </SectionCard>
+    </AppLayout>
   );
 }
 

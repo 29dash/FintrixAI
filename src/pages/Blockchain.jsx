@@ -1,238 +1,105 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { FiCheckCircle, FiClock, FiShield } from "react-icons/fi";
+
+import AppLayout from "../components/AppLayout";
+import EmptyState from "../components/EmptyState";
+import LoadingState from "../components/LoadingState";
+import { getLoanDetails } from "../api";
+import { useLoans } from "../state/useLoans";
+import { formatCurrency, hasRiskScore, riskLabel } from "../utils/loan";
+
+const steps = [
+  { key: "created", label: "Loan Created" },
+  { key: "risk", label: "Risk Analysis Completed" },
+  { key: "approved", label: "Loan Approved" },
+  { key: "recorded", label: "Blockchain Recorded" },
+  { key: "verified", label: "Transaction Verified" },
+];
 
 function Blockchain() {
-
-  const [loan, setLoan] = useState(null);
-
-  const navigate = useNavigate();
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/");
-  };
+  const { selectedLoan: loan } = useLoans();
+  const [details, setDetails] = useState(null);
+  const [loadedLoanId, setLoadedLoanId] = useState(null);
+  const [error, setError] = useState("");
+  const loading = Boolean(loan?._id && loadedLoanId !== loan._id);
 
   useEffect(() => {
-    fetchLoan();
-  }, []);
-
-  const fetchLoan = async () => {
-    try {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(
-        "http://localhost:5000/api/loan/my-loans",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await res.json();
-
-      if (data.length > 0) {
-        setLoan(data[0]);
-      }
-
-    } catch (error) {
-      console.error(error);
+    if (!loan?._id) {
+      return;
     }
-  };
+
+    let cancelled = false;
+    getLoanDetails(loan._id)
+      .then((data) => { if (!cancelled) { setDetails(data); setLoadedLoanId(loan._id); } })
+      .catch((requestError) => { if (!cancelled) { setError(requestError.message); setLoadedLoanId(loan._id); } })
+
+    return () => { cancelled = true; };
+  }, [loan?._id]);
 
   if (!loan) {
     return (
-      <div className="container mt-5">
-        <h3>Loading Blockchain Records...</h3>
-      </div>
+      <AppLayout sidebarVariant="user" title="Blockchain Verification" subtitle="Verify immutable loan records and audit history.">
+        <div className="empty-state-panel"><EmptyState title="No loan to verify" description="Apply for a loan before viewing its blockchain audit trail." icon={<FiShield />} /></div>
+      </AppLayout>
     );
   }
 
+  if (loading) return <AppLayout sidebarVariant="user"><LoadingState label="Loading blockchain records..." /></AppLayout>;
+
+  const currentDetails = details?.loan?._id === loan._id ? details : null;
+  const blockchain = currentDetails?.blockchain || { audit_trail: [] };
+  const auditEntries = blockchain.audit_trail || [];
+  const isVerified = Boolean(loan.blockchainHash || blockchain.verification_status === "Verified");
+  const riskComplete = hasRiskScore(loan);
+  const approved = ["approved", "paid"].includes(loan.status);
+  const recorded = Boolean(loan.blockchainHash || loan.blockchainVerificationStatus === "Verified");
+  const completed = { created: true, risk: riskComplete, approved, recorded, verified: isVerified };
+  const hash = loan.blockchainHash || "Awaiting block confirmation";
+  const entryFor = (key) => auditEntries.find((entry) => (key === "approved" && entry.actionType === 2) || ((key === "recorded" || key === "verified") && entry.actionType === 4));
+
   return (
-    <div className="container-fluid">
-
-      <div className="row">
-
-        <div className="col-md-2 sidebar">
-
-          <h3 className="mb-4">
-            FintrixAI
-          </h3>
-
-          <Link to="/dashboard">
-            Dashboard
-          </Link>
-
-          <Link to="/loan">
-            Apply Loan
-          </Link>
-
-          <Link to="/transactions">
-            Transactions
-          </Link>
-
-          <Link to="/blockchain">
-            Blockchain
-          </Link>
-
-          <Link to="/profile">
-            Profile
-          </Link>
-
-          <button
-            className="btn btn-danger w-100 mt-4"
-            onClick={logout}
-          >
-            Logout
-          </button>
-
+    <AppLayout sidebarVariant="user" title="Blockchain Verification" subtitle="Verify immutable loan records and audit history.">
+      {error && <div className="form-error" role="alert">{error}</div>}
+      <div className="content-grid content-grid--two">
+        <div className="verification-panel">
+          <div className="verification-panel__header">
+            <div><div className="kv-label">Verification Status</div><div className="verification-panel__status">{isVerified ? "Verified" : "Pending"}</div></div>
+            {isVerified ? <FiCheckCircle className="verification-panel__icon verification-panel__icon--success" /> : <FiClock className="verification-panel__icon verification-panel__icon--warning" />}
+          </div>
+          <div className="kv-label">Transaction Hash</div>
+          <div className="hash-box">{hash}</div>
+          {isVerified && loan.blockchainExplorerUrl && <a className="hash-link" href={loan.blockchainExplorerUrl} target="_blank" rel="noreferrer">View on testnet explorer</a>}
+          <div className="verification-panel__message">{isVerified ? "Transaction confirmed and recorded on-chain." : "Awaiting blockchain confirmation."}</div>
         </div>
 
-        <div className="col-md-10 page-container">
-
-          <div className="dashboard-header">
-
-            <h2>
-              Blockchain Verification Center
-            </h2>
-
-            <p>
-              Immutable loan verification and
-              audit trail powered by blockchain.
-            </p>
-
+        <div className="section-card section-card--nested">
+          <div className="section-card__header"><h2 className="section-card__title">Blockchain Details</h2></div>
+          <div className="info-grid">
+            <div className="detail-item"><span className="kv-label">Loan Status</span><span className="kv-value">{loan.status || "Pending"}</span></div>
+            <div className="detail-item"><span className="kv-label">Loan Amount</span><span className="kv-value">{formatCurrency(loan.amount)}</span></div>
+            <div className="detail-item"><span className="kv-label">Risk Score</span><span className="kv-value">{riskComplete ? `${Math.round(loan.riskScore)}% · ${riskLabel(loan.riskScore)}` : "Not yet calculated"}</span></div>
+            <div className="detail-item"><span className="kv-label">Interest Rate</span><span className="kv-value">{loan.interestRate ? `${loan.interestRate}%` : "—"}</span></div>
+            <div className="detail-item"><span className="kv-label">Duration</span><span className="kv-value">{loan.duration ? `${loan.duration} months` : "—"}</span></div>
+            <div className="detail-item"><span className="kv-label">Recorded On</span><span className="kv-value">{loan.blockchainTimestamp ? new Date(loan.blockchainTimestamp).toLocaleString() : "Not yet recorded"}</span></div>
           </div>
-
-          <div className="row">
-
-            <div className="col-md-6">
-
-              <div className="blockchain-card">
-
-                <h4>
-                  Transaction Hash
-                </h4>
-
-                <div className="hash-box mt-3">
-
-                  {loan.blockchainHash
-                    ? loan.blockchainHash
-                    : "Pending Approval"}
-
-                </div>
-
-                <div className="mt-4">
-
-                  {loan.blockchainHash ? (
-
-                    <span className="success-badge">
-                      ✓ Verified On-Chain
-                    </span>
-
-                  ) : (
-
-                    <span className="warning-badge">
-                      ⏳ Awaiting Blockchain Recording
-                    </span>
-
-                  )}
-
-                </div>
-
-              </div>
-
-            </div>
-
-            <div className="col-md-6">
-
-              <div className="card-soft p-4">
-
-                <h4 className="mb-4">
-                  Blockchain Details
-                </h4>
-
-                <div className="mb-3">
-                  <strong>Loan Status</strong>
-                  <br />
-                  {loan.status}
-                </div>
-
-                <div className="mb-3">
-                  <strong>Loan Amount</strong>
-                  <br />
-                  ₹{Number(
-                    loan.amount
-                  ).toLocaleString()}
-                </div>
-
-                <div className="mb-3">
-                  <strong>Risk Level</strong>
-                  <br />
-                  {loan.riskLevel}
-                </div>
-
-                <div className="mb-3">
-                  <strong>Interest Rate</strong>
-                  <br />
-                  {loan.interestRate}%
-                </div>
-
-                <div className="mb-3">
-                  <strong>Duration</strong>
-                  <br />
-                  {loan.duration} Months
-                </div>
-
-                <div className="mb-3">
-                  <strong>Recorded On</strong>
-                  <br />
-                  {new Date(
-                    loan.createdAt
-                  ).toLocaleString()}
-                </div>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          <div className="card-soft p-4 mt-4">
-
-            <h4 className="mb-3">
-              Blockchain Security Benefits
-            </h4>
-
-            <ul>
-              <li>
-                Tamper-proof loan records
-              </li>
-
-              <li>
-                Immutable audit trail
-              </li>
-
-              <li>
-                Transparent verification
-              </li>
-
-              <li>
-                Decentralized record keeping
-              </li>
-
-              <li>
-                Secure transaction history
-              </li>
-            </ul>
-
-          </div>
-
         </div>
-
       </div>
 
-    </div>
+      <div className="timeline-card">
+        <div className="section-card__header"><h2 className="section-card__title">Audit Trail</h2></div>
+        <div className="timeline">
+          {steps.map((step, index) => {
+            const entry = entryFor(step.key);
+            return <div key={step.key} className={`timeline__item ${index === steps.length - 1 ? "timeline__item--last" : ""} ${completed[step.key] ? "timeline__item--complete" : "timeline__item--pending"}`}>
+              <span className="timeline__dot">{completed[step.key] && <FiCheckCircle />}</span>
+              <span>{step.label}</span>
+              <small>{entry?.timestamp ? new Date(entry.timestamp).toLocaleString() : completed[step.key] && step.key === "created" && loan.createdAt ? new Date(loan.createdAt).toLocaleString() : completed[step.key] ? "Confirmed" : "Pending"}</small>
+            </div>;
+          })}
+        </div>
+      </div>
+      <div className="security-note"><FiShield /><span>Immutable records, transparent verification, and tamper-resistant audit history.</span></div>
+    </AppLayout>
   );
 }
 

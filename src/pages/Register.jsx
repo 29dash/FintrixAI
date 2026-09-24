@@ -1,6 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { useToast } from "../state/useToast";
 
 function Register() {
   const navigate = useNavigate();
@@ -9,93 +10,92 @@ function Register() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const { showToast } = useToast();
 
   const handleRegister = async () => {
+    if (!name || !email || !password) {
+      showToast("Name, email, and password are required.", "error");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await axios.post(
-        "http://localhost:5000/api/auth/register",
-        {
-          name,
-          email,
-          password,
-        }
-      );
+      await axios.post("http://localhost:5001/api/auth/register", {
+        name,
+        email,
+        password,
+      });
 
-      alert("Registration successful!");
-
+      showToast("Registration successful. You can now log in.", "success");
       navigate("/");
     } catch (err) {
-      alert(
-        err.response?.data?.message ||
-        "Registration failed"
-      );
+      showToast(err.response?.data?.message || "Registration failed.", "error");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="fintrix-bg min-vh-100 d-flex align-items-center justify-content-center">
-      <div className="form-card">
-        <div className="text-center mb-5">
-          <h1 className="fw-bold text-dark">
-            Create Account
-          </h1>
-
-          <p className="text-muted mt-3">
-            Register to access FintrixAI services
-          </p>
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-card__brand">
+          <div className="auth-card__mark">F</div>
+          <h1 className="auth-card__title">Create Account</h1>
         </div>
 
-        <input
-          type="text"
-          className="form-control form-control-lg mb-3"
-          placeholder="Full Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <p className="auth-card__subtitle">
+          Register to access FintrixAI services and evaluate your loan profile.
+        </p>
 
-        <input
-          type="email"
-          className="form-control form-control-lg mb-3"
-          placeholder="Email Address"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+        <div className="auth-form">
+          <label className="field">
+            <span className="field__label">Full Name</span>
+            <input
+              type="text"
+              placeholder="Jane Doe"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
 
-        <input
-          type="text"
-          className="form-control form-control-lg mb-3"
-          placeholder="Phone Number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
+          <label className="field">
+            <span className="field__label">Email</span>
+            <input
+              type="email"
+              placeholder="jane@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
 
-        <input
-          type="password"
-          className="form-control form-control-lg mb-4"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <label className="field">
+            <span className="field__label">Phone Number</span>
+            <input
+              type="text"
+              placeholder="+1 555 123 4567"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
 
-        <button
-          className="btn btn-primary btn-lg w-100"
-          onClick={handleRegister}
-        >
-          Register
-        </button>
+          <label className="field">
+            <span className="field__label">Password</span>
+            <input
+              type="password"
+              placeholder="Create a password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
 
-        <p className="text-center mt-4 text-muted">
-          Already have an account?{" "}
-          <span
-            style={{
-              color: "#4f46e5",
-              cursor: "pointer",
-              fontWeight: "600",
-            }}
-            onClick={() => navigate("/")}
-          >
-            Login
-          </span>
+          <button type="button" className="button button--primary button--wide" onClick={handleRegister} disabled={submitting}>
+            {submitting ? "Creating account..." : "Register"}
+          </button>
+        </div>
+
+        <p className="auth-card__footer">
+          Already have an account? <span className="auth-card__link" onClick={() => navigate("/")}>Login</span>
         </p>
       </div>
     </div>

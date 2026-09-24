@@ -1,53 +1,42 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { FiCreditCard } from "react-icons/fi";
 
+import EmptyState from "../components/EmptyState";
+import LoadingState from "../components/LoadingState";
+import RetryAssessmentButton from "../components/RetryAssessmentButton";
+import { useLoans } from "../state/useLoans";
+import { hasRiskScore, riskLabel } from "../utils/loan";
 
 function RiskResult() {
-  const navigate = useNavigate();
-  const result = JSON.parse(localStorage.getItem("loanResult"));
+  const { selectedLoan: loan, loading } = useLoans();
 
-  const riskScore =
-    result?.loan?.riskScore ||
-    result?.risk_score ||
-    0;
+  if (loading) return <div className="auth-shell auth-shell--compact"><LoadingState label="Loading risk assessment..." /></div>;
 
-  const riskLevel =
-    result?.loan?.riskLevel ||
-    result?.risk_level ||
-    "Unknown";
+  if (!loan) {
+    return <div className="auth-shell auth-shell--compact"><div className="empty-state-panel"><EmptyState title="No loan selected" description="Submit a loan application before viewing a risk assessment." icon={<FiCreditCard />} action={<Link className="button button--primary" to="/loan">Apply Loan</Link>} /></div></div>;
+  }
 
-  const explanations =
-    result?.risk_assessment?.explanation ||
-    result?.explanation ||
-    [];
+  const assessed = hasRiskScore(loan);
+  const failed = loan?.riskAssessmentStatus === "failed";
+  const tone = assessed ? (loan.riskScore >= 80 ? "danger" : loan.riskScore >= 50 ? "warning" : "success") : "neutral";
 
   return (
-    <div className="fintrix-bg min-vh-100 d-flex align-items-center justify-content-center">
-      <div className="form-card text-center">
-        <h2 className="mb-4">AI Risk Analysis Complete</h2>
-
-        <h1 className="text-warning mb-3">
-          {riskScore}%
-        </h1>
-
-        <h4 className="mb-3">
-          {riskLevel} Risk
-        </h4>
-
-        <div className="alert-risk mb-4">
-          {explanations.length > 0 ? (
-            <ul className="text-start mb-0">
-              {explanations.map((item, index) => (
-                <li key={index}>{item}</li>
-              ))}
-            </ul>
-          ) : (
-            "No explanation available"
-          )}
+    <div className="auth-shell auth-shell--compact">
+      <div className="result-card">
+        <div className="result-card__eyebrow">AI Risk Analysis</div>
+        <h1 className="result-card__title">{assessed ? `${Math.round(loan.riskScore)}%` : "Not yet calculated"}</h1>
+        <div className={`result-card__tag result-card__tag--${tone}`}>{assessed ? riskLabel(loan.riskScore) : failed ? "Assessment failed" : "Pending"}</div>
+        <div className="result-card__section">
+          <div className="kv-label">Risk assessment summary</div>
+          <div className="result-card__summary">
+            {failed ? <><p>Risk assessment could not be completed.</p><p className="assessment-error">{loan.riskAssessmentError || "The ML service did not return a usable response."}</p></> : assessed ? (loan.riskExplanations?.length ? loan.riskExplanations.slice(0, 3).map((item) => <p key={item}>{item}</p>) : <p>No explanation available.</p>) : "The risk model has not returned a score yet."}
+          </div>
         </div>
-
-        <button className="btn btn-primary w-100" onClick={() => navigate("/dashboard")}
->         Proceed to Dashboard
-        </button>
+        <div className="result-card__actions">
+          <Link className="button button--primary" to="/dashboard">View Dashboard</Link>
+          <RetryAssessmentButton loan={loan} />
+          <Link className="button button--secondary" to="/loan">View Loan Details</Link>
+        </div>
       </div>
     </div>
   );

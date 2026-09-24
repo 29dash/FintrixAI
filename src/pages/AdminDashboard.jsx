@@ -1,347 +1,179 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Bar } from "react-chartjs-2";
+import {
+  BarElement,
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LinearScale,
+  Tooltip,
+} from "chart.js";
+import {
+  FiActivity,
+  FiAlertTriangle,
+  FiCheckCircle,
+  FiClock,
+  FiDollarSign,
+  FiRefreshCw,
+  FiUsers,
+} from "react-icons/fi";
+
+import AppLayout from "../components/AppLayout";
+import LoadingState from "../components/LoadingState";
+import SectionCard from "../components/SectionCard";
+import StatCard from "../components/StatCard";
+import StatusBadge from "../components/StatusBadge";
+import { getAdminOverview } from "../api";
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+
+const EMPTY_OVERVIEW = {
+  metrics: {
+    totalLoans: 0,
+    totalDisbursed: 0,
+    activeLoans: 0,
+    pendingLoans: 0,
+    rejectedLoans: 0,
+    averageRiskScore: 0,
+    totalUsers: 0,
+  },
+  volume: [],
+  riskLevels: { low: 0, medium: 0, high: 0 },
+};
+
+const currency = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
 
 function AdminDashboard() {
+  const [overview, setOverview] = useState(EMPTY_OVERVIEW);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const [loans, setLoans] = useState([]);
+  const fetchOverview = async () => {
+    setLoading(true);
+    setError("");
 
-  const navigate = useNavigate();
-
-  const logout = () => {
-    localStorage.removeItem("token");
-    navigate("/");
+    try {
+      setOverview(await getAdminOverview());
+    } catch (requestError) {
+      setError(requestError.message || "Unable to load the admin overview.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchLoans();
+    let cancelled = false;
+
+    getAdminOverview()
+      .then((data) => {
+        if (!cancelled) {
+          setOverview(data);
+        }
+      })
+      .catch((requestError) => {
+        if (!cancelled) {
+          setError(requestError.message || "Unable to load the admin overview.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const fetchLoans = async () => {
-    try {
-
-      const token = localStorage.getItem("token");
-
-      const res = await fetch(
-        "http://localhost:5000/api/admin/all-loans",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await res.json();
-
-      setLoans(data);
-
-    } catch (err) {
-      console.error(err);
-    }
+  const { metrics, volume, riskLevels } = overview;
+  const hasData = metrics.totalLoans > 0 || metrics.totalUsers > 0;
+  const chartData = {
+    labels: volume.map((month) => month.label),
+    datasets: [
+      {
+        label: "Loan applications",
+        data: volume.map((month) => month.count),
+        backgroundColor: "rgba(79, 70, 229, 0.72)",
+        borderRadius: 6,
+        maxBarThickness: 42,
+      },
+    ],
   };
-
-  const approveLoan = async (id) => {
-    try {
-
-      const token = localStorage.getItem("token");
-
-      await fetch(
-        `http://localhost:5000/api/loan/approve/${id}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      fetchLoans();
-
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const rejectLoan = async (id) => {
-    try {
-
-      const token = localStorage.getItem("token");
-
-      await fetch(
-        `http://localhost:5000/api/loan/reject/${id}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      fetchLoans();
-
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const highRiskLoans =
-    loans.filter((loan) => loan.riskLevel === "High");
-
-  const pendingLoans =
-    loans.filter((loan) => loan.status === "pending");
-
-  const approvedLoans =
-    loans.filter((loan) => loan.status === "approved");
 
   return (
-    <div className="container-fluid">
-
-      <div className="row">
-
-        <div className="col-md-2 sidebar">
-
-          <h3 className="mb-4">
-            Admin Panel
-          </h3>
-
-          <Link to="/admin">
-            Dashboard
-          </Link>
-
-          <Link to="/admin/users">
-            Users
-          </Link>
-
-          <Link to="/admin/transactions">
-            Transactions
-          </Link>
-
-          <button
-            className="btn btn-danger w-100 mt-4"
-            onClick={logout}
-          >
-            Logout
+    <AppLayout
+      sidebarVariant="admin"
+      title="Admin Overview"
+      subtitle="Monitor portfolio health, risk signals, and lending activity across FintrixAI."
+    >
+      {loading ? (
+        <LoadingState label="Loading portfolio overview..." />
+      ) : error ? (
+        <SectionCard title="Overview unavailable" subtitle={error}>
+          <button type="button" className="button button--secondary" onClick={fetchOverview}>
+            <FiRefreshCw />
+            Retry
           </button>
-
-        </div>
-
-        <div className="col-md-10 page-container">
-
-          <div className="dashboard-header">
-            <h2>
-              AI Risk Monitoring & Loan Approval Center
-            </h2>
-
-            <p>
-              Monitor AI-generated risk assessments
-              and approve blockchain-backed loans.
-            </p>
+        </SectionCard>
+      ) : (
+        <>
+          <div className="stats-grid">
+            <StatCard label="Total Loans Issued" value={metrics.totalLoans} icon={FiActivity} />
+            <StatCard label="Value Disbursed" value={currency.format(metrics.totalDisbursed)} icon={FiDollarSign} />
+            <StatCard label="Active Loans" value={metrics.activeLoans} tone="success" icon={FiCheckCircle} />
+            <StatCard label="Pending Loans" value={metrics.pendingLoans} tone="warning" icon={FiClock} />
+            <StatCard label="Rejected Loans" value={metrics.rejectedLoans} tone="danger" icon={FiAlertTriangle} />
+            <StatCard label="Average Risk Score" value={`${metrics.averageRiskScore}%`} icon={FiActivity} />
+            <StatCard label="Registered Users" value={metrics.totalUsers} icon={FiUsers} />
           </div>
 
-          <div className="row g-4 mb-4">
+          {!hasData && (
+            <SectionCard title="No portfolio data yet" subtitle="Loan and user activity will appear here once records are created." />
+          )}
 
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Total Loans</h6>
-                <h3>{loans.length}</h3>
+          <div className="content-grid content-grid--two">
+            <SectionCard title="Loan volume" subtitle="Applications created over the last six months">
+              <div className="admin-chart" role="img" aria-label="Loan application volume over the last six months">
+                <Bar
+                  data={chartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                      y: { beginAtZero: true, ticks: { precision: 0 } },
+                      x: { grid: { display: false } },
+                    },
+                  }}
+                />
               </div>
-            </div>
+            </SectionCard>
 
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>High Risk Loans</h6>
-                <h3 className="text-danger">
-                  {highRiskLoans.length}
-                </h3>
+            <SectionCard title="Risk distribution" subtitle="Current loan portfolio by AI risk level">
+              <div className="risk-breakdown">
+                <div className="risk-breakdown__row">
+                  <span><StatusBadge status="Low" /></span>
+                  <strong>{riskLevels.low}</strong>
+                </div>
+                <div className="risk-breakdown__row">
+                  <span><StatusBadge status="Medium" /></span>
+                  <strong>{riskLevels.medium}</strong>
+                </div>
+                <div className="risk-breakdown__row">
+                  <span><StatusBadge status="High" /></span>
+                  <strong>{riskLevels.high}</strong>
+                </div>
               </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Pending Approval</h6>
-                <h3 className="text-warning">
-                  {pendingLoans.length}
-                </h3>
-              </div>
-            </div>
-
-            <div className="col-md-3">
-              <div className="stat-card">
-                <h6>Approved Loans</h6>
-                <h3 className="text-success">
-                  {approvedLoans.length}
-                </h3>
-              </div>
-            </div>
-
+            </SectionCard>
           </div>
-
-          <div className="card-soft p-4 mb-4">
-
-            <h4 className="text-danger mb-4">
-              🚨 High Risk Applications
-            </h4>
-
-            {highRiskLoans.length === 0 ? (
-
-              <div className="text-success">
-                No high-risk applications detected.
-              </div>
-
-            ) : (
-
-              <table className="table">
-
-                <thead>
-                  <tr>
-                    <th>User</th>
-                    <th>Amount</th>
-                    <th>Risk Score</th>
-                    <th>Risk Level</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-
-                  {highRiskLoans.map((loan) => (
-
-                    <tr key={loan._id}>
-
-                      <td>
-                        {loan.userId?.name}
-                      </td>
-
-                      <td>
-                        ₹{Number(
-                          loan.amount
-                        ).toLocaleString()}
-                      </td>
-
-                      <td className="text-danger">
-                        {loan.riskScore}%
-                      </td>
-
-                      <td>
-                        {loan.riskLevel}
-                      </td>
-
-                    </tr>
-
-                  ))}
-
-                </tbody>
-
-              </table>
-
-            )}
-
-          </div>
-
-          <div className="card-soft p-4">
-
-            <h4 className="mb-4">
-              All Loan Requests
-            </h4>
-
-            <table className="table">
-
-              <thead>
-                <tr>
-                  <th>User</th>
-                  <th>Amount</th>
-                  <th>Risk</th>
-                  <th>Status</th>
-                  <th>Blockchain</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-
-              <tbody>
-
-                {loans.map((loan) => (
-
-                  <tr key={loan._id}>
-
-                    <td>
-                      {loan.userId?.name}
-                    </td>
-
-                    <td>
-                      ₹{Number(
-                        loan.amount
-                      ).toLocaleString()}
-                    </td>
-
-                    <td>
-
-                      <span
-                        className={
-                          loan.riskLevel === "High"
-                            ? "text-danger"
-                            : loan.riskLevel === "Medium"
-                            ? "text-warning"
-                            : "text-success"
-                        }
-                      >
-                        {loan.riskScore}%
-                      </span>
-
-                    </td>
-
-                    <td>
-                      {loan.status}
-                    </td>
-
-                    <td>
-
-                      {loan.blockchainHash
-                        ? "✅ Recorded"
-                        : "⏳ Pending"}
-
-                    </td>
-
-                    <td>
-
-                      {loan.status === "pending" && (
-
-                        <>
-                          <button
-                            className="btn btn-success btn-sm me-2"
-                            onClick={() =>
-                              approveLoan(loan._id)
-                            }
-                          >
-                            Approve
-                          </button>
-
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() =>
-                              rejectLoan(loan._id)
-                            }
-                          >
-                            Reject
-                          </button>
-                        </>
-
-                      )}
-
-                    </td>
-
-                  </tr>
-
-                ))}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
-        </div>
-
-      </div>
-
-    </div>
+        </>
+      )}
+    </AppLayout>
   );
 }
 
