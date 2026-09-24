@@ -52,6 +52,10 @@ const loanSchema = new mongoose.Schema({
         required: true
     },
 
+    cibilScore: {
+        type: Number
+    },
+
     openAccounts: {
         type: Number,
         required: true
@@ -77,7 +81,17 @@ const loanSchema = new mongoose.Schema({
         default: 12
     },
 
+    grade: {
+        type: String,
+        required: true
+    },
+
     emi: {
+        type: Number,
+        default: 0
+    },
+
+    totalInterest: {
         type: Number,
         default: 0
     },
@@ -99,17 +113,62 @@ const loanSchema = new mongoose.Schema({
 
     riskScore: {
         type: Number,
-        default: 0
+        default: null
     },
 
     riskLevel: {
         type: String,
-        default: "Unknown"
+        default: null
+    },
+
+    riskAssessmentStatus: {
+        type: String,
+        enum: ["assessed", "pending", "failed"],
+        default: "pending"
+    },
+
+    riskAssessmentError: {
+        type: String,
+        default: ""
+    },
+
+    defaultProbability: {
+        type: Number,
+        default: null
+    },
+
+    riskExplanations: {
+        type: [String],
+        default: []
     },
 
     blockchainHash: {
         type: String,
         default: ""
+    },
+
+    blockchainLoanId: {
+        type: Number,
+        default: null
+    },
+
+    blockchainBlockNumber: {
+        type: Number,
+        default: null
+    },
+
+    blockchainPayloadHash: {
+        type: String,
+        default: ""
+    },
+
+    blockchainTimestamp: {
+        type: Date
+    },
+
+    blockchainVerificationStatus: {
+        type: String,
+        default: "Pending"
     },
 
     nextDueDate: {
@@ -126,6 +185,20 @@ const loanSchema = new mongoose.Schema({
             "overdue"
         ],
         default: "pending"
+    },
+
+    decisionComment: {
+        type: String,
+        default: ""
+    },
+
+    decisionBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    },
+
+    decisionAt: {
+        type: Date
     },
 
     createdAt: {

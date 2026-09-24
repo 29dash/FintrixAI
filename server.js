@@ -4,6 +4,8 @@ const cors = require("cors");
 
 require("dotenv").config();
 
+const { ensureDefaultAdmin } = require("./controllers/authController");
+
 // Routes
 const authRoutes = require("./routes/authRoutes");
 const loanRoutes = require("./routes/loanRoutes");
@@ -12,6 +14,7 @@ const adminRoutes = require("./routes/adminRoutes");
 
 const app = express();
 
+console.log("SERVER FILE LOADED");
 // Middleware
 app.use(express.json());
 app.use(cors());
@@ -27,16 +30,28 @@ app.use("/api/admin", adminRoutes);
 
 // Home Route
 app.get("/", (req, res) => {
+    console.log("HOME ROUTE HIT");
     res.send("Loan Management Backend Running");
 });
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log("MongoDB Connected"))
-    .catch((err) => console.log("MongoDB Error:", err));
+    .then(async () => {
+        console.log("MongoDB Connected");
+        console.log("MongoDB State:", mongoose.connection.readyState);
 
+        try {
+            const adminUser = await ensureDefaultAdmin();
+            if (adminUser) {
+                console.log("Default admin ensured:", adminUser.email);
+            }
+        } catch (error) {
+            console.error("Admin bootstrap error:", error.message);
+        }
+    })
+    .catch((err) => console.error("MongoDB Error:", err));
 // PORT
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Start Server
 app.listen(PORT, () => {

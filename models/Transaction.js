@@ -19,6 +19,11 @@ const transactionSchema = new mongoose.Schema({
         required: true
     },
 
+    remainingBalance: {
+        type: Number,
+        required: false
+    },
+
     paymentDate: {
         type: Date,
         default: Date.now
