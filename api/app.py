@@ -1,7 +1,9 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field, field_validator
 import joblib
 import numpy as np
+import pandas as pd
+from pathlib import Path
 
 app = FastAPI(
     title="FintrixAI ML Engine",
@@ -9,29 +11,44 @@ app = FastAPI(
     version="2.0"
 )
 
-# Load Models
-xgb_model = joblib.load("../models/xgboost_model.pkl")
-scaler = joblib.load("../models/scaler.pkl")
-encoders = joblib.load("../models/label_encoders.pkl")
+# Resolve model files from this source file so the API can be started from any directory.
+MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
+xgb_model = joblib.load(MODEL_DIR / "xgboost_model.pkl")
+scaler = joblib.load(MODEL_DIR / "scaler.pkl")
+encoders = joblib.load(MODEL_DIR / "label_encoders.pkl")
 
 
 class PredictionRequest(BaseModel):
 
-    loan_amnt: float
-    term: int
-    int_rate: float
-    grade: str
-    emp_length: str
-    home_ownership: str
-    annual_inc: float
-    verification_status: str
-    purpose: str
-    dti: float
-    fico_score: float
-    open_acc: int
-    revol_bal: float
-    revol_util: float
-    total_acc: int
+    loan_amnt: float = Field(gt=0)
+    term: int = Field(gt=0)
+    int_rate: float = Field(gt=0, le=100)
+    grade: str = Field(min_length=1)
+    emp_length: str = Field(min_length=1)
+    home_ownership: str = Field(min_length=1)
+    annual_inc: float = Field(gt=0)
+    verification_status: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    dti: float = Field(ge=0, le=100)
+    fico_score: float = Field(ge=300, le=850)
+    open_acc: int = Field(ge=0)
+    revol_bal: float = Field(ge=0)
+    revol_util: float = Field(ge=0, le=100)
+    total_acc: int = Field(ge=0)
+
+    @field_validator(
+        "grade",
+        "emp_length",
+        "home_ownership",
+        "verification_status",
+        "purpose",
+    )
+    @classmethod
+    def strip_text(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be empty")
+        return value
 
 
 def generate_risk_score(probability):
@@ -60,7 +77,9 @@ def home():
 def health():
 
     return {
-        "status": "running"
+        "status": "running",
+        "model_features": getattr(xgb_model, "n_features_in_", None),
+        "scaler_features": getattr(scaler, "n_features_in_", None),
     }
 
 
@@ -68,40 +87,31 @@ def health():
 
 def predict(data: PredictionRequest):
 
-    # Encode categorical fields
-    print("TERM RECEIVED:", data.term)
-    print("FULL DATA:", data)
+    term_label = f" {data.term} months"
 
-    term_encoded = encoders["term"].transform(
-        [f" {data.term} months"]
-    )[0]
+    def encode_category(name, value):
+        encoder = encoders[name]
+        if value not in encoder.classes_:
+            allowed = ", ".join(str(item) for item in encoder.classes_)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unsupported {name}: {value}. Allowed values: {allowed}",
+            )
+        return encoder.transform([value])[0]
 
-    grade_encoded = encoders["grade"].transform(
-        [data.grade]
-    )[0]
-
-    emp_length_encoded = encoders["emp_length"].transform(
-        [data.emp_length]
-    )[0]
-
-    home_encoded = encoders["home_ownership"].transform(
-        [data.home_ownership]
-    )[0]
-
-    verification_encoded = encoders[
-        "verification_status"
-    ].transform(
-        [data.verification_status]
-    )[0]
-
-    purpose_encoded = encoders["purpose"].transform(
-        [data.purpose]
-    )[0]
+    term_encoded = encode_category("term", term_label)
+    grade_encoded = encode_category("grade", data.grade)
+    emp_length_encoded = encode_category("emp_length", data.emp_length)
+    home_encoded = encode_category("home_ownership", data.home_ownership)
+    verification_encoded = encode_category(
+        "verification_status", data.verification_status
+    )
+    purpose_encoded = encode_category("purpose", data.purpose)
 
     fico_low = data.fico_score
     fico_high = data.fico_score
 
-    features = np.array([[
+    feature_values = [[
         data.loan_amnt,
         term_encoded,
         data.int_rate,
@@ -118,7 +128,13 @@ def predict(data: PredictionRequest):
         data.revol_bal,
         data.revol_util,
         data.total_acc
-    ]])
+    ]]
+
+    feature_names = getattr(scaler, "feature_names_in_", None)
+    if feature_names is not None:
+        features = pd.DataFrame(feature_values, columns=feature_names)
+    else:
+        features = np.array(feature_values)
 
     scaled_features = scaler.transform(
         features
