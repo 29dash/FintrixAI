@@ -35,7 +35,7 @@ function buildResponse(receipt, note = "Tamper-proof record stored") {
 /**
  * Records a loan approval/rejection on the LoanRecord contract.
  * @param {object} loanData - { loanId, applicantAddress, applicantName,
- *                              loanAmount, interestRate, tenureMonths, status }
+ *                              loanAmount, interestRate, tenureMonths, status, note }
  */
 async function logLoanRecord(loanData) {
   const { LoanRecord, AuditTrail } = await getContracts();
@@ -49,6 +49,7 @@ async function logLoanRecord(loanData) {
     interestRate,
     tenureMonths,
     status,
+    note,
   } = loanData;
 
   // Write to LoanRecord contract
@@ -76,7 +77,7 @@ async function logLoanRecord(loanData) {
       loanId,
       applicantAddress,
       toBytes32(payloadHash),
-      `Loan ${loanId} recorded with status ${status}`
+      note || `Loan ${status === "APPROVED" ? "Approved" : "Rejected"} by Admin`
     )
     .send({ from: owner, gas: 1000000 });
 

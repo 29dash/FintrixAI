@@ -21,6 +21,7 @@ router.post("/record", async (req, res) => {
     const {
       loanId, applicantAddress, applicantName,
       loanAmount, interestRate, tenureMonths, status,
+      note,
     } = req.body;
 
     // Basic input validation
@@ -41,6 +42,7 @@ router.post("/record", async (req, res) => {
       interestRate:     Math.round((Number(interestRate) || 0) * 100), // store as int
       tenureMonths:     Number(tenureMonths) || 0,
       status,
+      note,
     });
 
     return res.status(201).json(result);
