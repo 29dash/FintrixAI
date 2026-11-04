@@ -111,6 +111,11 @@ const loanSchema = new mongoose.Schema({
         default: 0
     },
 
+    appliedPaymentIds: {
+        type: [mongoose.Schema.Types.ObjectId],
+        default: []
+    },
+
     riskScore: {
         type: Number,
         default: null

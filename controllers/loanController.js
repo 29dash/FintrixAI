@@ -474,19 +474,18 @@ exports.getMyLoanDetails = async (req, res) => {
         }).sort({ paymentDate: -1, _id: -1 });
 
         let blockchain = { audit_trail: [] };
-        if (loan.blockchainLoanId !== null && loan.blockchainLoanId !== undefined) {
-            try {
-                const [verificationResponse, auditResponse] = await Promise.all([
-                    axios.get(`${BLOCKCHAIN_API_URL}/api/blockchain/loans/verify/${loan.blockchainLoanId}`, { timeout: 5000 }),
-                    axios.get(`${BLOCKCHAIN_API_URL}/api/blockchain/loans/audit/${loan.blockchainLoanId}`, { timeout: 5000 })
-                ]);
-                blockchain = {
-                    ...verificationResponse.data,
-                    audit_trail: auditResponse.data.audit_trail || []
-                };
-            } catch (error) {
-                blockchain = { audit_trail: [], error: "Blockchain service unavailable" };
-            }
+        const blockchainLoanId = loan.blockchainLoanId ?? getBlockchainLoanId(loan._id);
+        try {
+            const [verificationResponse, auditResponse] = await Promise.all([
+                axios.get(`${BLOCKCHAIN_API_URL}/api/blockchain/loans/verify/${blockchainLoanId}`, { timeout: 5000 }),
+                axios.get(`${BLOCKCHAIN_API_URL}/api/blockchain/loans/audit/${blockchainLoanId}`, { timeout: 5000 })
+            ]);
+            blockchain = {
+                ...verificationResponse.data,
+                audit_trail: auditResponse.data.audit_trail || []
+            };
+        } catch (error) {
+            blockchain = { audit_trail: [], error: "Blockchain service unavailable" };
         }
 
         res.status(200).json({ loan, transactions, blockchain });
