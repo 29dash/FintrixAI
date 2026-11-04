@@ -14,7 +14,7 @@
 
 const { getContracts }    = require("./contractLoader");
 const { getOwnerAccount } = require("./web3Provider");
-const { hashPayload, toBytes32 } = require("./hashHelper");
+const { hashPayload, hashString, toBytes32 } = require("./hashHelper");
 
 // ─────────────────────────────────────────────────────────────
 //  Helper: build the standard response object
@@ -92,45 +92,120 @@ async function logLoanRecord(loanData) {
  * @param {object} txData - { loanId, initiator, recipient, amount, txType, description }
  *   txType: 0=DISBURSEMENT, 1=REPAYMENT, 2=APPLICATION, 3=STATUS_CHANGE, 4=AUDIT
  */
-async function logTransaction(txData) {
+async function logTransaction(txData, requestId) {
   const { TransactionLog, AuditTrail } = await getContracts();
   const owner = await getOwnerAccount();
 
   const { loanId, initiator, recipient, amount, txType, description } = txData;
   const payloadHash = hashPayload(txData);
+  const hash = toBytes32(payloadHash);
+  let receipt;
+  let transactionHash;
+  let blockNumber;
+  let txIndex;
+  let shouldWriteAudit = true;
 
-  const receipt = await TransactionLog.methods
-    .logTransaction(
-      loanId,
-      initiator,
-      recipient,
-      amount,
-      txType,
-      description,
-      toBytes32(payloadHash)
-    )
-    .send({ from: owner, gas: 1000000 });
+  if (requestId) {
+    const requestKey = hashString(`fintrix-payment:${requestId}`);
+    const existingIndexPlusOne = Number(
+      await TransactionLog.methods.requestIndexPlusOne(requestKey).call()
+    );
 
-  // Determine txIndex from return value via event logs
-  const txIndex = Number(
-    receipt.events.TransactionLogged?.returnValues?.txIndex ?? 0
-  );
+    if (existingIndexPlusOne > 0) {
+      txIndex = existingIndexPlusOne - 1;
+      shouldWriteAudit = false;
+      const existingTransaction = await TransactionLog.methods.getTransaction(txIndex).call();
+      if (existingTransaction.dataHash.toLowerCase() !== hash.toLowerCase()) {
+        throw new Error("This payment request ID was already used with a different payload.");
+      }
+    } else {
+      receipt = await TransactionLog.methods
+        .logTransactionWithId(
+          requestKey,
+          loanId,
+          initiator,
+          recipient,
+          amount,
+          txType,
+          description,
+          hash
+        )
+        .send({ from: owner, gas: 1000000 });
 
-  // Also audit this log event
-  await AuditTrail.methods
-    .addAuditEntry(
-      4, // AUDIT action type
-      loanId,
-      initiator,
-      toBytes32(payloadHash),
-      `Transaction ${txIndex} logged for loan ${loanId}`
-    )
-    .send({ from: owner, gas: 1000000 });
+      txIndex = Number(
+        receipt.events.TransactionLoggedWithRequest?.returnValues?.txIndex
+          ?? receipt.events.TransactionRequestReused?.returnValues?.txIndex
+      );
+      if (!Number.isSafeInteger(txIndex)) {
+        throw new Error("Blockchain transaction receipt did not include its transaction index.");
+      }
+      shouldWriteAudit = Boolean(receipt.events.TransactionLoggedWithRequest);
+    }
+
+    const requestEvents = await TransactionLog.getPastEvents("TransactionLoggedWithRequest", {
+      filter: { requestId: requestKey },
+      fromBlock: 0,
+      toBlock: "latest",
+    });
+    const originalEvent = requestEvents[0];
+    if (!originalEvent) {
+      throw new Error(`Could not find the on-chain event for payment request ${requestId}.`);
+    }
+    transactionHash = originalEvent.transactionHash;
+    blockNumber = Number(originalEvent.blockNumber);
+  } else {
+    receipt = await TransactionLog.methods
+      .logTransaction(
+        loanId,
+        initiator,
+        recipient,
+        amount,
+        txType,
+        description,
+        hash
+      )
+      .send({ from: owner, gas: 1000000 });
+
+    txIndex = Number(receipt.events.TransactionLogged?.returnValues?.txIndex ?? 0);
+    transactionHash = receipt.transactionHash;
+    blockNumber = Number(receipt.blockNumber);
+  }
+
+  let auditError = "";
+  if (shouldWriteAudit) {
+    try {
+      const auditActionType = txType === 0 ? 4 : txType === 1 ? 5 : 9;
+      await AuditTrail.methods
+        .addAuditEntry(
+          auditActionType,
+          loanId,
+          initiator,
+          hash,
+          `${txType === 1 ? "Repayment" : txType === 0 ? "Disbursement" : "Transaction"} ${txIndex} logged for loan ${loanId}`
+        )
+        .send({ from: owner, gas: 1000000 });
+    } catch (error) {
+      auditError = error.message;
+      console.error(`[BlockchainLogger] Transaction ${txIndex} was recorded, but its audit entry failed:`, auditError);
+    }
+  }
 
   return {
-    ...buildResponse(receipt, `Transaction ${txIndex} logged immutably`),
+    ...(receipt && !requestId
+      ? buildResponse(
+          receipt,
+          auditError ? `Transaction ${txIndex} logged immutably; audit entry failed` : `Transaction ${txIndex} logged immutably`
+        )
+      : {
+          transaction_hash: transactionHash,
+          block_number: blockNumber,
+          verification_status: "Verified",
+          audit_status: auditError ? "Transaction recorded; audit entry failed" : `Transaction ${txIndex} logged immutably`,
+          gas_used: receipt ? Number(receipt.gasUsed) : 0,
+        }),
     tx_index: txIndex,
     payload_hash: payloadHash,
+    audit_error: auditError,
   };
 }
 

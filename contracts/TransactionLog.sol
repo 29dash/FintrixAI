@@ -28,6 +28,7 @@ contract TransactionLog {
 
     Transaction[] private txLog;
     mapping(uint256 => uint256[]) private loanTransactions; // loanId -> txIndexes
+    mapping(bytes32 => uint256) public requestIndexPlusOne;
 
     event TransactionLogged(
         uint256 indexed txIndex,
@@ -37,6 +38,9 @@ contract TransactionLog {
         uint256 amount,
         uint256 timestamp
     );
+
+    event TransactionLoggedWithRequest(bytes32 indexed requestId, uint256 indexed txIndex);
+    event TransactionRequestReused(bytes32 indexed requestId, uint256 indexed txIndex);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "TransactionLog: not owner");
@@ -53,7 +57,7 @@ contract TransactionLog {
      * @param _loanId      Associated loan (use 0 if N/A)
      * @param _initiator   Address that triggered the action
      * @param _recipient   Affected address
-     * @param _amount      Monetary amount (use 0 for non-monetary)
+     * @param _amount      Monetary amount in the currency's smallest unit (use 0 for non-monetary)
      * @param _txType      Enum: 0=DISBURSEMENT,1=REPAYMENT,2=APPLICATION,3=STATUS,4=AUDIT
      * @param _description Human-readable note
      * @param _dataHash    keccak256 hash of the full off-chain data payload
@@ -67,6 +71,60 @@ contract TransactionLog {
         string  memory _description,
         bytes32 _dataHash
     ) external onlyOwner returns (uint256) {
+        return _appendTransaction(
+            _loanId,
+            _initiator,
+            _recipient,
+            _amount,
+            _txType,
+            _description,
+            _dataHash
+        );
+    }
+
+    function logTransactionWithId(
+        bytes32 _requestId,
+        uint256 _loanId,
+        address _initiator,
+        address _recipient,
+        uint256 _amount,
+        TxType _txType,
+        string memory _description,
+        bytes32 _dataHash
+    ) external onlyOwner returns (uint256) {
+        require(_requestId != bytes32(0), "TransactionLog: request ID is required");
+
+        uint256 existingIndexPlusOne = requestIndexPlusOne[_requestId];
+        if (existingIndexPlusOne != 0) {
+            uint256 existingIndex = existingIndexPlusOne - 1;
+            require(txLog[existingIndex].dataHash == _dataHash, "TransactionLog: request ID payload mismatch");
+            emit TransactionRequestReused(_requestId, existingIndex);
+            return existingIndex;
+        }
+
+        uint256 index = _appendTransaction(
+            _loanId,
+            _initiator,
+            _recipient,
+            _amount,
+            _txType,
+            _description,
+            _dataHash
+        );
+        requestIndexPlusOne[_requestId] = index + 1;
+        emit TransactionLoggedWithRequest(_requestId, index);
+        return index;
+    }
+
+    function _appendTransaction(
+        uint256 _loanId,
+        address _initiator,
+        address _recipient,
+        uint256 _amount,
+        TxType _txType,
+        string memory _description,
+        bytes32 _dataHash
+    ) internal returns (uint256) {
         uint256 index = txCount;
 
         txLog.push(Transaction({

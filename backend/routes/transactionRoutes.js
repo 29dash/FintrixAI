@@ -14,10 +14,13 @@ const { logTransaction, verifyTransactionIntegrity } = require("../utils/blockch
 // txType values: 0=DISBURSEMENT, 1=REPAYMENT, 2=APPLICATION, 3=STATUS_CHANGE, 4=AUDIT
 router.post("/log", async (req, res) => {
   try {
-    const { loanId, initiator, recipient, amount, txType, description } = req.body;
+    const { loanId, initiator, recipient, amount, txType, description, requestId } = req.body;
 
     if (initiator === undefined || txType === undefined) {
       return res.status(400).json({ error: "Missing required fields: initiator, txType" });
+    }
+    if (requestId !== undefined && (typeof requestId !== "string" || requestId.length === 0 || requestId.length > 128)) {
+      return res.status(400).json({ error: "requestId must be a non-empty string of at most 128 characters" });
     }
     if (txType < 0 || txType > 4) {
       return res.status(400).json({ error: "txType must be 0–4" });
@@ -32,10 +35,13 @@ router.post("/log", async (req, res) => {
       description: description       || "",
     };
 
-    const result = await logTransaction(txData);
+    const result = await logTransaction(txData, requestId);
     return res.status(201).json(result);
   } catch (err) {
     console.error("[transactionRoutes] /log error:", err.message);
+    if (err.message.includes("request ID payload mismatch")) {
+      return res.status(409).json({ error: err.message });
+    }
     return res.status(500).json({ error: err.message });
   }
 });

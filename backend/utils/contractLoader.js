@@ -44,6 +44,7 @@ async function getContracts() {
     AuditTrail:     process.env.AUDIT_TRAIL_ADDRESS,
   };
 
+  const loadedContracts = {};
   for (const [name, address] of Object.entries(addresses)) {
     if (!address || address === "0x0000000000000000000000000000000000000000") {
       throw new Error(
@@ -51,11 +52,19 @@ async function getContracts() {
         `Add it to your .env after running "truffle migrate".`
       );
     }
+    const code = await web3.eth.getCode(address);
+    if (!code || /^0x0*$/i.test(code)) {
+      throw new Error(
+        `[ContractLoader] No deployed "${name}" contract found at ${address} on the connected Ganache network. ` +
+        `Run "truffle migrate --reset --network development" and update your .env addresses.`
+      );
+    }
     const abi = loadABI(name);
-    contracts[name] = new web3.eth.Contract(abi, address);
+    loadedContracts[name] = new web3.eth.Contract(abi, address);
     console.log(`[ContractLoader] Loaded ${name} @ ${address}`);
   }
 
+  contracts = loadedContracts;
   return contracts;
 }
 
