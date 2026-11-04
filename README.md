@@ -27,3 +27,11 @@ blockchain API run on ports `5001`, `8000`, and `3001` respectively.
 `npm run dev` repairs or creates `Fintrix-Ml/venv` and installs its pinned
 dependencies before starting. On macOS it also installs Homebrew's `libomp`
 runtime when needed by XGBoost.
+
+## Payment confirmation
+
+An EMI payment remains pending and does not change the loan balance until its
+transaction is recorded on Ganache. If blockchain confirmation is unavailable,
+retry the pending payment from Transaction History; the retry uses the same
+request ID to prevent duplicate on-chain records. This flow records payment
+activity but does not transfer funds through a bank or payment provider.

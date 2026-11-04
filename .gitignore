@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+Fintrix-Frontend/dist/
+Fintrix-Ml/venv/
+Fintrix-Ml/**/__pycache__/
+Fintrix-Ml/**/.ipynb_checkpoints/.env
