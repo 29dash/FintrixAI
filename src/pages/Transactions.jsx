@@ -1,20 +1,39 @@
 import { useEffect, useState } from "react";
-import { FiFileText, FiInbox } from "react-icons/fi";
+import { FiFileText, FiInbox, FiX } from "react-icons/fi";
 
 import AppLayout from "../components/AppLayout";
 import EmptyState from "../components/EmptyState";
 import LoadingState from "../components/LoadingState";
 import StatusBadge from "../components/StatusBadge";
-import { getLoanDetails } from "../api";
+import { getLoanDetails, retryPaymentConfirmation } from "../api";
 import { useLoans } from "../state/useLoans";
+import { useToast } from "../state/useToast";
 import { formatCurrency } from "../utils/loan";
 
 function Transactions() {
   const { selectedLoan: loan } = useLoans();
+  const { showToast } = useToast();
   const [transactions, setTransactions] = useState([]);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [retryingPaymentId, setRetryingPaymentId] = useState(null);
   const [loadedLoanId, setLoadedLoanId] = useState(null);
   const [error, setError] = useState("");
   const loading = Boolean(loan?._id && loadedLoanId !== loan._id);
+
+  const retryConfirmation = async (transaction) => {
+    setRetryingPaymentId(transaction._id);
+    try {
+      const response = await retryPaymentConfirmation(transaction._id);
+      const status = response.transaction?.status;
+      showToast(response.message, status === "success" ? "success" : "error");
+      setSelectedTransaction(response.transaction || transaction);
+      window.dispatchEvent(new CustomEvent("fintrix-transactions-refresh", { detail: { loanId: loan?._id } }));
+    } catch (requestError) {
+      showToast(requestError.message || "Could not retry payment confirmation.", "error");
+    } finally {
+      setRetryingPaymentId(null);
+    }
+  };
 
   useEffect(() => {
     if (!loan?._id) {
@@ -68,16 +87,97 @@ function Transactions() {
       ) : (
         <div className="table-card table-responsive">
           <table className="data-table">
-            <thead><tr><th>Transaction ID</th><th>Date</th><th>Amount</th><th>Status</th><th>Hash</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Transaction ID</th><th>Date</th><th>Amount</th><th>Payment Status</th><th>Blockchain Status</th><th>Hash</th><th>Actions</th></tr></thead>
             <tbody>{transactions.map((tx) => <tr key={tx._id}>
               <td>{tx._id?.slice(-8) || "N/A"}</td>
               <td>{tx.paymentDate ? new Date(tx.paymentDate).toLocaleDateString() : "N/A"}</td>
               <td>{formatCurrency(tx.amount)}</td>
               <td><StatusBadge status={tx.status || "Paid"} /></td>
-              <td>{tx.transactionHash || "Awaiting confirmation"}</td>
-              <td><button type="button" className="button button--tiny button--secondary"><FiFileText /><span>View</span></button></td>
+              <td>
+                <StatusBadge status={
+                  tx.blockchainStatus === "recorded" || tx.transactionHash
+                    ? "Recorded"
+                    : tx.blockchainStatus === "failed" ? "Failed" : "Unknown"
+                } />
+              </td>
+              <td>{tx.transactionHash || "Not recorded"}</td>
+              <td>
+                <button
+                  type="button"
+                  className="button button--tiny button--secondary"
+                  aria-label={`View transaction ${tx._id}`}
+                  onClick={() => setSelectedTransaction(tx)}
+                >
+                  <FiFileText /><span>View</span>
+                </button>
+                {tx.status === "pending" && (
+                  <button
+                    type="button"
+                    className="button button--tiny button--secondary"
+                    disabled={retryingPaymentId === tx._id}
+                    onClick={() => retryConfirmation(tx)}
+                  >
+                    {retryingPaymentId === tx._id ? "Checking..." : "Retry confirmation"}
+                  </button>
+                )}
+              </td>
             </tr>)}</tbody>
           </table>
+        </div>
+      )}
+      {selectedTransaction && (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedTransaction(null)}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="transaction-detail-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-card__header">
+              <div>
+                <h2 id="transaction-detail-title">Payment details</h2>
+                <p>{selectedTransaction._id}</p>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close transaction details"
+                onClick={() => setSelectedTransaction(null)}
+              >
+                <FiX />
+              </button>
+            </div>
+            <div className="modal-card__body">
+              <div className="info-grid">
+                <div className="detail-item"><span className="kv-label">Payment date</span><span className="kv-value">{selectedTransaction.paymentDate ? new Date(selectedTransaction.paymentDate).toLocaleString() : "N/A"}</span></div>
+                <div className="detail-item"><span className="kv-label">Amount</span><span className="kv-value">{formatCurrency(selectedTransaction.amount || 0)}</span></div>
+                <div className="detail-item"><span className="kv-label">Remaining balance</span><span className="kv-value">{selectedTransaction.remainingBalance !== null && selectedTransaction.remainingBalance !== undefined ? formatCurrency(selectedTransaction.remainingBalance) : "N/A"}</span></div>
+                <div className="detail-item"><span className="kv-label">Payment status</span><span className="kv-value"><StatusBadge status={selectedTransaction.status || "success"} /></span></div>
+                <div className="detail-item"><span className="kv-label">Blockchain status</span><span className="kv-value">{selectedTransaction.blockchainStatus === "recorded" || selectedTransaction.transactionHash ? "Recorded" : selectedTransaction.blockchainStatus === "failed" ? "Failed" : "Unknown"}</span></div>
+                {selectedTransaction.blockchainTxIndex !== undefined && <div className="detail-item"><span className="kv-label">Blockchain transaction index</span><span className="kv-value">{selectedTransaction.blockchainTxIndex}</span></div>}
+              </div>
+              <div className="detail-item" style={{ marginTop: "1rem" }}>
+                <span className="kv-label">Transaction hash</span>
+                <div className="hash-box">{selectedTransaction.transactionHash || "Not recorded"}</div>
+              </div>
+              {selectedTransaction.status === "pending" && (
+                <div className="modal-card__footer">
+                  <button
+                    type="button"
+                    className="button button--primary"
+                    disabled={retryingPaymentId === selectedTransaction._id}
+                    onClick={() => retryConfirmation(selectedTransaction)}
+                  >
+                    {retryingPaymentId === selectedTransaction._id ? "Checking..." : "Retry confirmation"}
+                  </button>
+                </div>
+              )}
+              <div className="modal-card__footer">
+                <button type="button" className="button button--secondary" onClick={() => setSelectedTransaction(null)}>Close</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </AppLayout>

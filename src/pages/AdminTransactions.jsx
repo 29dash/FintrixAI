@@ -96,7 +96,9 @@ function AdminTransactions() {
                   <th>Amount Paid</th>
                   <th>Date</th>
                   <th>Resulting Remaining Balance</th>
-                  <th>Transaction Status</th>
+                  <th>Payment Status</th>
+                  <th>Blockchain Status</th>
+                  <th>Transaction Hash</th>
                 </tr>
               </thead>
               <tbody>
@@ -111,6 +113,14 @@ function AdminTransactions() {
                     <td>{tx.paymentDate ? new Date(tx.paymentDate).toLocaleDateString() : "N/A"}</td>
                     <td>{tx.remainingBalance !== null && tx.remainingBalance !== undefined ? formatCurrency(tx.remainingBalance) : "N/A"}</td>
                     <td><StatusBadge status={tx.status || "success"} /></td>
+                    <td>
+                      <StatusBadge status={
+                        tx.blockchainStatus === "recorded" || tx.transactionHash
+                          ? "recorded"
+                          : tx.blockchainStatus === "failed" ? "failed" : "unknown"
+                      } />
+                    </td>
+                    <td>{tx.transactionHash || "No hash returned"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -1501,7 +1501,7 @@ h6 {
   font-size: 13px;
 }
 
-.toast {
+.app-toast {
   position: fixed;
   right: 24px;
   bottom: 24px;
@@ -1520,15 +1520,15 @@ h6 {
   font-weight: 600;
 }
 
-.toast--success {
+.app-toast--success {
   border-color: rgba(22, 163, 74, 0.35);
 }
 
-.toast--error {
+.app-toast--error {
   border-color: rgba(220, 38, 38, 0.35);
 }
 
-.toast__close {
+.app-toast__close {
   border: 0;
   background: transparent;
   color: var(--muted);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   FiActivity,
@@ -16,7 +16,7 @@ import RiskScoreCard from "../components/RiskScoreCard";
 import RetryAssessmentButton from "../components/RetryAssessmentButton";
 import SectionCard from "../components/SectionCard";
 import StatCard from "../components/StatCard";
-import { payLoan } from "../api";
+import { getLoanDetails, payLoan } from "../api";
 import { useLoans } from "../state/useLoans";
 import { useToast } from "../state/useToast";
 import { calculateEmi, formatCurrency, hasRiskScore, riskLabel } from "../utils/loan";
@@ -24,8 +24,71 @@ import { calculateEmi, formatCurrency, hasRiskScore, riskLabel } from "../utils/
 function Dashboard() {
   const { selectedLoan: loan, user, loading, error, refreshLoans } = useLoans();
   const { showToast } = useToast();
-  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentInput, setPaymentInput] = useState({ loanId: null, amount: null });
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [loanDetails, setLoanDetails] = useState(null);
+  if (loan?._id && paymentInput.loanId !== loan._id) {
+    setPaymentInput({ loanId: loan._id, amount: null });
+  }
+  const paymentAmount = paymentInput.amount;
+
+  useEffect(() => {
+    if (!loan?._id) return undefined;
+
+    let cancelled = false;
+    const fetchDetails = () => {
+      getLoanDetails(loan._id)
+        .then((details) => {
+          if (!cancelled) setLoanDetails({ loanId: loan._id, details });
+        })
+        .catch(() => {
+          if (!cancelled) setLoanDetails({ loanId: loan._id, details: null });
+        });
+    };
+    fetchDetails();
+
+    const handleRefresh = (event) => {
+      const targetLoanId = event.detail?.loanId;
+      if (!targetLoanId || targetLoanId === loan._id) fetchDetails();
+    };
+    window.addEventListener("fintrix-transactions-refresh", handleRefresh);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("fintrix-transactions-refresh", handleRefresh);
+    };
+  }, [loan?._id]);
+
+  const currentLoanDetails = loanDetails?.loanId === loan?._id ? loanDetails?.details || null : null;
+  const blockchain = currentLoanDetails?.blockchain;
+  const verificationStatus = String(blockchain?.verification_status || "").toLowerCase();
+  const storedVerificationStatus = String(loan?.blockchainVerificationStatus || "").toLowerCase();
+  const loanRecordStatus = blockchain?.error
+    ? "Unavailable"
+    : verificationStatus === "verified"
+      ? "Verified"
+      : verificationStatus === "not found"
+        ? "Not found"
+        : storedVerificationStatus === "failed"
+          ? "Failed"
+          : storedVerificationStatus === "verified"
+            ? "Verified"
+            : currentLoanDetails
+              ? "Pending"
+              : "Loading";
+  const latestPayment = currentLoanDetails?.transactions?.[0];
+  const pendingPayment = currentLoanDetails?.transactions?.find((transaction) => transaction.status === "pending");
+  const latestPaymentStatus = !currentLoanDetails
+    ? "Loading"
+    : !latestPayment
+      ? "No payments recorded"
+      : latestPayment.status === "pending"
+        ? "Payment pending blockchain confirmation"
+        : latestPayment.status === "failed"
+          ? "Payment failed"
+          : latestPayment.blockchainStatus === "recorded" || latestPayment.transactionHash
+            ? "Payment successful · recorded on-chain"
+            : "Payment successful · blockchain unconfirmed";
   const isAdmin = Boolean(user?.isAdmin);
   const riskValue = hasRiskScore(loan) ? Number(loan.riskScore) : null;
   const riskLevelText = riskValue === null ? "Not yet calculated" : riskLabel(riskValue);
@@ -36,6 +99,7 @@ function Dashboard() {
   const needsAssessment = ["failed", "pending"].includes(loan?.riskAssessmentStatus);
   const isActiveLoan = ["approved", "overdue"].includes(loan?.status);
   const defaultPaymentAmount = !isAdmin && isActiveLoan && loan ? String(Number(monthlyEmi || 0)) : "";
+  const effectivePaymentAmount = paymentAmount ?? defaultPaymentAmount;
   const riskDescription =
     hasAssessmentFailure
       ? "Risk assessment could not be completed. Please try again when the model service is available."
@@ -46,7 +110,7 @@ function Dashboard() {
   const handlePayEMI = async () => {
     if (!loan?._id) return;
 
-    const parsedAmount = Number(paymentAmount);
+      const parsedAmount = Number(effectivePaymentAmount);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       showToast("Enter a valid EMI amount to pay.", "error");
       return;
@@ -56,8 +120,10 @@ function Dashboard() {
 
     try {
       const response = await payLoan(loan._id, parsedAmount);
-      setPaymentAmount("");
-      showToast(response?.message || "Payment successful.", "success");
+      setPaymentInput({ loanId: loan._id, amount: null });
+      const paymentFailed = response?.transaction?.status === "failed";
+      const paymentPending = response?.transaction?.status === "pending";
+      showToast(response?.message || "Payment successful.", paymentFailed || paymentPending ? "error" : "success");
       window.dispatchEvent(new CustomEvent("fintrix-transactions-refresh", { detail: { loanId: loan._id } }));
       await refreshLoans();
     } catch (requestError) {
@@ -180,6 +246,11 @@ function Dashboard() {
 
           {!isAdmin && isActiveLoan && (
             <div className="payment-form" style={{ marginTop: "1.25rem" }}>
+              {pendingPayment && (
+                <p className="muted-copy">
+                  A payment is awaiting blockchain confirmation. Retry it from <Link to="/transactions">Transaction History</Link> before submitting another payment.
+                </p>
+              )}
               <div className="detail-item" style={{ width: "100%" }}>
                 <span className="kv-label">Pay EMI</span>
                 <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginTop: "0.5rem", flexWrap: "wrap" }}>
@@ -188,15 +259,15 @@ function Dashboard() {
                     type="number"
                     min="0"
                     step="100"
-                    value={paymentAmount || defaultPaymentAmount}
-                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    value={effectivePaymentAmount}
+                    onChange={(event) => setPaymentInput({ loanId: loan._id, amount: event.target.value })}
                     placeholder="EMI amount"
                     style={{ flex: 1, minWidth: 160, padding: "0.7rem 0.9rem", borderRadius: 8, border: "1px solid #d1d5db" }}
                   />
                   <button
                     type="button"
                     className="button button--primary"
-                    disabled={submittingPayment}
+                    disabled={submittingPayment || Boolean(pendingPayment)}
                     onClick={handlePayEMI}
                   >
                     {submittingPayment ? <><FiLoader style={{ marginRight: 6, animation: "spin 1s linear infinite" }} /> Processing...</> : "Pay EMI"}
@@ -210,8 +281,10 @@ function Dashboard() {
 
       <div className="summary-callout">
         <div>
-          <div className="kv-label">Security status</div>
-          <div className="summary-callout__value">{loan.blockchainHash ? "Verified on blockchain" : "Awaiting blockchain verification"}</div>
+          <div className="kv-label">Loan record status</div>
+          <div className="summary-callout__value">{loanRecordStatus}</div>
+          <div className="kv-label" style={{ marginTop: "0.75rem" }}>Latest payment</div>
+          <div className="kv-value">{latestPaymentStatus}</div>
         </div>
         <div className="summary-callout__meta">
           <FiShield />
