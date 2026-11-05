@@ -1,5 +1,14 @@
 # FintrixAI
 
+## Clone the project
+
+The backend, blockchain, frontend, and ML code are regular folders in this
+repository. Clone it normally:
+
+```bash
+git clone https://github.com/29dash/FintrixAI.git
+```
+
 ## Run the project
 
 Start MongoDB and Ganache first. Ganache must listen on port `7545`, and the

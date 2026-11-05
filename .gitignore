@@ -1,5 +1,6 @@
 .DS_Store
 node_modules/
+.env
 Fintrix-Frontend/dist/
 Fintrix-Ml/venv/
 Fintrix-Ml/**/__pycache__/
