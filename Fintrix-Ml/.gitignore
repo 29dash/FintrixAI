@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+.ipynb_checkpoints/
+data/
+node_modules
+models/*
+!models/xgboost_model.pkl
+!models/scaler.pkl
+!models/label_encoders.pkl
